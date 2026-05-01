@@ -1,85 +1,342 @@
 import streamlit as st
 import sqlite3
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
+from io import BytesIO
 
 st.set_page_config(page_title="BetaPro - Control de Picheo", layout="wide")
 
-DB = "datos.db"
+# ========== ESTILOS ==========
+st.markdown("""
+<style>
+.stApp { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); }
+.main-title { text-align: center; color: #3399FF; font-size: 2.5rem; }
+.metric-card { background: #1e1e2e; border-radius: 10px; padding: 15px; border-left: 4px solid #3399FF; margin: 10px 0; }
+</style>
+""", unsafe_allow_html=True)
 
-conn = sqlite3.connect(DB)
-c = conn.cursor()
-c.execute('CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY, nombre TEXT UNIQUE, pass TEXT, rol TEXT)')
-c.execute('CREATE TABLE IF NOT EXISTS picheos (id INTEGER PRIMARY KEY, fecha TEXT, control TEXT, cantidad INTEGER, operador TEXT)')
-c.execute('CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT)')
+DB = "betapro.db"
 
-hash_admin = hashlib.sha256("admin123".encode()).hexdigest()
-c.execute("INSERT OR IGNORE INTO usuarios VALUES (1, 'admin', ?, 'admin')", (hash_admin,))
-c.execute("INSERT OR IGNORE INTO config VALUES ('precio', '0.025')")
-conn.commit()
-conn.close()
-
-def login(usuario, pw):
+# ========== BASE DE DATOS ==========
+def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
-    hp = hashlib.sha256(pw.encode()).hexdigest()
-    c.execute("SELECT * FROM usuarios WHERE nombre=? AND pass=?", (usuario, hp))
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY, nombre TEXT UNIQUE, pass TEXT, rol TEXT, email TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS picheos (
+        id INTEGER PRIMARY KEY, fecha TEXT, control TEXT, cantidad INTEGER, ganancia REAL, operador TEXT, notas TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT)''')
+    
+    hash_admin = hashlib.sha256("admin123".encode()).hexdigest()
+    c.execute("INSERT OR IGNORE INTO usuarios VALUES (1, 'admin', ?, 'admin', 'admin@betapro.com')", (hash_admin,))
+    c.execute("INSERT OR IGNORE INTO config VALUES ('precio', '0.025')")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def login(u, p):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    hp = hashlib.sha256(p.encode()).hexdigest()
+    c.execute("SELECT * FROM usuarios WHERE nombre=? AND pass=?", (u, hp))
     r = c.fetchone()
     conn.close()
     return r
 
+def registrar_usuario(u, p, email):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    hp = hashlib.sha256(p.encode()).hexdigest()
+    try:
+        c.execute("INSERT INTO usuarios (nombre, pass, rol, email) VALUES (?, ?, 'usuario', ?)", (u, hp, email))
+        conn.commit()
+        return True
+    except:
+        return False
+    finally:
+        conn.close()
+
+def cambiar_pass(u, actual, nueva):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    ha = hashlib.sha256(actual.encode()).hexdigest()
+    hn = hashlib.sha256(nueva.encode()).hexdigest()
+    c.execute("UPDATE usuarios SET pass=? WHERE nombre=? AND pass=?", (hn, u, ha))
+    ok = c.rowcount > 0
+    conn.commit()
+    conn.close()
+    return ok
+
+def guardar_picheo(fecha, control, cantidad, operador, notas):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("SELECT valor FROM config WHERE clave='precio'")
+    precio = float(c.fetchone()[0])
+    ganancia = cantidad * precio
+    c.execute("INSERT INTO picheos (fecha, control, cantidad, ganancia, operador, notas) VALUES (?,?,?,?,?,?)",
+             (fecha, control, cantidad, ganancia, operador, notas))
+    conn.commit()
+    conn.close()
+    return True
+
+def eliminar_picheo(id_reg, operador, es_admin):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    if es_admin:
+        c.execute("DELETE FROM picheos WHERE id=?", (id_reg,))
+    else:
+        c.execute("DELETE FROM picheos WHERE id=? AND operador=?", (id_reg, operador))
+    conn.commit()
+    conn.close()
+
+def get_picheos(filtros=None, operador=None, es_admin=False):
+    conn = sqlite3.connect(DB)
+    query = "SELECT * FROM picheos WHERE 1=1"
+    params = []
+    if not es_admin and operador:
+        query += " AND operador = ?"
+        params.append(operador)
+    if filtros:
+        if filtros.get('fecha_desde'):
+            query += " AND fecha >= ?"
+            params.append(filtros['fecha_desde'])
+        if filtros.get('fecha_hasta'):
+            query += " AND fecha <= ?"
+            params.append(filtros['fecha_hasta'])
+        if filtros.get('control'):
+            query += " AND control LIKE ?"
+            params.append(f"%{filtros['control']}%")
+        if filtros.get('anio'):
+            query += " AND strftime('%Y', fecha) = ?"
+            params.append(str(filtros['anio']))
+        if filtros.get('mes') and filtros['mes'] != 'todos':
+            query += " AND strftime('%m', fecha) = ?"
+            params.append(f"{int(filtros['mes']):02d}")
+        if filtros.get('quincena') and filtros['quincena'] != 'todas':
+            if filtros['quincena'] == '1':
+                query += " AND CAST(strftime('%d', fecha) AS INTEGER) BETWEEN 1 AND 15"
+            else:
+                query += " AND CAST(strftime('%d', fecha) AS INTEGER) BETWEEN 16 AND 31"
+        if filtros.get('semana') and filtros['semana'] != 'todas':
+            semanas = {'1': (1,7), '2': (8,14), '3': (15,21), '4': (22,31)}
+            s, e = semanas[filtros['semana']]
+            query += f" AND CAST(strftime('%d', fecha) AS INTEGER) BETWEEN {s} AND {e}"
+    query += " ORDER BY fecha DESC"
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+def get_precio():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("SELECT valor FROM config WHERE clave='precio'")
+    p = float(c.fetchone()[0])
+    conn.close()
+    return p
+
+def set_precio(nuevo):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("UPDATE config SET valor=? WHERE clave='precio'", (str(nuevo),))
+    conn.commit()
+    conn.close()
+
+def get_operadores():
+    conn = sqlite3.connect(DB)
+    df = pd.read_sql_query("SELECT DISTINCT operador FROM picheos WHERE operador IS NOT NULL", conn)
+    conn.close()
+    return df['operador'].tolist() if not df.empty else []
+
+def export_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
+
+# ========== LOGIN ==========
 if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
 if not st.session_state.logueado:
-    st.title("⛏️ BetaPro - Control de Picheo")
-    usuario = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
-    if st.button("Ingresar"):
-        if login(usuario, password):
-            st.session_state.logueado = True
-            st.session_state.usuario = usuario
-            st.rerun()
-        else:
-            st.error("Usuario o contraseña incorrectos")
-else:
-    st.sidebar.title(f"👤 {st.session_state.usuario}")
-    menu = st.sidebar.radio("Menú", ["📊 Dashboard", "📝 Registrar", "📋 Ver Registros"])
+    st.markdown('<h1 class="main-title">⛏️ BetaPro Mining</h1>', unsafe_allow_html=True)
     
+    tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
+    
+    with tab1:
+        usuario = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+        if st.button("Ingresar", use_container_width=True):
+            u = login(usuario, password)
+            if u:
+                st.session_state.logueado = True
+                st.session_state.usuario = u[1]
+                st.session_state.rol = u[3]
+                st.session_state.user_id = u[0]
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos")
+    
+    with tab2:
+        nuevo = st.text_input("Usuario")
+        email = st.text_input("Email")
+        pass1 = st.text_input("Contraseña", type="password")
+        pass2 = st.text_input("Confirmar", type="password")
+        if st.button("Registrarse", use_container_width=True):
+            if pass1 == pass2:
+                if registrar_usuario(nuevo, pass1, email):
+                    st.success("Registrado! Ahora inicia sesión")
+                else:
+                    st.error("Usuario ya existe")
+            else:
+                st.error("Las contraseñas no coinciden")
+
+# ========== PANEL PRINCIPAL ==========
+else:
+    st.sidebar.markdown(f"### 👤 {st.session_state.usuario}")
+    st.sidebar.markdown(f"*Rol: {st.session_state.rol}*")
+    st.sidebar.divider()
+    
+    menu = st.sidebar.radio("MENÚ", ["📊 Dashboard", "📝 Registrar", "📋 Registros", "🔐 Cambiar Pass", "⚙️ Admin"])
+    
+    # ========== DASHBOARD ==========
     if menu == "📊 Dashboard":
-        st.title("Dashboard")
-        conn = sqlite3.connect(DB)
-        df = pd.read_sql_query("SELECT * FROM picheos ORDER BY fecha DESC", conn)
-        conn.close()
+        st.markdown('<h1 class="main-title">📊 Dashboard</h1>', unsafe_allow_html=True)
+        
+        # Filtros
+        st.subheader("🔍 Filtros")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            anio = st.selectbox("Año", [2024, 2025, 2026, "todos"], index=3)
+        with c2:
+            mes = st.selectbox("Mes", ["todos"] + list(range(1,13)), index=0)
+        with c3:
+            quincena = st.selectbox("Quincena", ["todas", "1", "2"], index=0)
+        with c4:
+            semana = st.selectbox("Semana", ["todas", "1", "2", "3", "4"], index=0)
+        with c5:
+            buscar = st.text_input("Buscar control", placeholder="ID...")
+        
+        filtros = {}
+        if anio != "todos":
+            filtros['anio'] = anio
+        if mes != "todos":
+            filtros['mes'] = mes
+        if quincena != "todas":
+            filtros['quincena'] = quincena
+        if semana != "todas":
+            filtros['semana'] = semana
+        if buscar:
+            filtros['control'] = buscar
+        
+        df = get_picheos(filtros, st.session_state.usuario, st.session_state.rol == 'admin')
+        
         if not df.empty:
-            col1, col2 = st.columns(2)
-            col1.metric("Total Registros", len(df))
-            col2.metric("Total Picheos", f"{int(df['cantidad'].sum()):,}")
-            st.dataframe(df.head(10))
+            precio = get_precio()
+            total_picheos = df['cantidad'].sum()
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("📋 Registros", len(df))
+            c2.metric("⛏️ Total Picheos", f"{int(total_picheos):,}")
+            c3.metric("💰 Ganancias", f"${total_picheos * precio:,.2f}")
+            
+            st.subheader("Últimos registros")
+            st.dataframe(df.head(10)[['fecha', 'control', 'cantidad', 'ganancia', 'operador']], use_container_width=True)
+        else:
+            st.info("No hay datos")
+    
+    # ========== REGISTRAR ==========
+    elif menu == "📝 Registrar":
+        st.markdown('<h1 class="main-title">📝 Registrar Picheo</h1>', unsafe_allow_html=True)
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            fecha = st.date_input("Fecha", datetime.now())
+        with c2:
+            control = st.text_input("ID Control")
+        with c3:
+            cantidad = st.number_input("Cantidad", min_value=1, step=1)
+        
+        operador = st.text_input("Operador", value=st.session_state.usuario)
+        notas = st.text_area("Notas")
+        
+        if st.button("💾 Guardar", use_container_width=True):
+            if control and cantidad:
+                guardar_picheo(fecha.strftime('%Y-%m-%d'), control, cantidad, operador, notas)
+                st.success("✅ Guardado!")
+                st.rerun()
+    
+    # ========== REGISTROS ==========
+    elif menu == "📋 Registros":
+        st.markdown('<h1 class="main-title">📋 Registros</h1>', unsafe_allow_html=True)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            desde = st.date_input("Desde", datetime.now() - timedelta(days=30))
+        with c2:
+            hasta = st.date_input("Hasta", datetime.now())
+        
+        df = get_picheos(
+            {'fecha_desde': desde.strftime('%Y-%m-%d'), 'fecha_hasta': hasta.strftime('%Y-%m-%d')},
+            st.session_state.usuario,
+            st.session_state.rol == 'admin'
+        )
+        
+        if not df.empty:
+            st.dataframe(df[['id', 'fecha', 'control', 'cantidad', 'ganancia', 'operador', 'notas']], use_container_width=True)
+            
+            # Exportar Excel
+            excel = export_excel(df)
+            st.download_button("📊 Exportar Excel", excel, f"reporte_{datetime.now().strftime('%Y%m%d')}.xlsx")
+            
+            # Eliminar
+            st.subheader("🗑️ Eliminar")
+            id_elim = st.number_input("ID a eliminar", min_value=0, step=1)
+            if st.button("Eliminar"):
+                if id_elim > 0:
+                    eliminar_picheo(id_elim, st.session_state.usuario, st.session_state.rol == 'admin')
+                    st.success("Eliminado!")
+                    st.rerun()
         else:
             st.info("No hay registros")
     
-    elif menu == "📝 Registrar":
-        st.title("Nuevo Registro")
-        fecha = st.date_input("Fecha", datetime.now())
-        control = st.text_input("ID Control")
-        cantidad = st.number_input("Cantidad de Picheos", min_value=1, step=1)
-        operador = st.text_input("Operador", value=st.session_state.usuario)
-        if st.button("Guardar"):
-            if control and cantidad:
-                conn = sqlite3.connect(DB)
-                c = conn.cursor()
-                c.execute("INSERT INTO picheos (fecha, control, cantidad, operador) VALUES (?,?,?,?)",
-                         (fecha.strftime('%Y-%m-%d'), control, cantidad, operador))
-                conn.commit()
-                conn.close()
-                st.success("✅ Registro guardado!")
-                st.rerun()
+    # ========== CAMBIAR PASS ==========
+    elif menu == "🔐 Cambiar Pass":
+        st.markdown('<h1 class="main-title">🔐 Cambiar Contraseña</h1>', unsafe_allow_html=True)
+        
+        actual = st.text_input("Contraseña actual", type="password")
+        nueva = st.text_input("Nueva contraseña", type="password")
+        confirma = st.text_input("Confirmar", type="password")
+        
+        if st.button("Actualizar"):
+            if nueva == confirma:
+                if cambiar_pass(st.session_state.usuario, actual, nueva):
+                    st.success("✅ Contraseña cambiada")
+                else:
+                    st.error("Contraseña actual incorrecta")
+            else:
+                st.error("No coinciden")
     
-    elif menu == "📋 Ver Registros":
-        st.title("Registros")
-        conn = sqlite3.connect(DB)
-        df = pd.read_sql_query("SELECT * FROM picheos ORDER BY fecha DESC", conn)
-        conn.close()
-        st.dataframe(df)
+    # ========== ADMIN ==========
+    elif menu == "⚙️ Admin":
+        if st.session_state.rol == 'admin':
+            st.markdown('<h1 class="main-title">⚙️ Administración</h1>', unsafe_allow_html=True)
+            
+            # Precio
+            precio_act = get_precio()
+            nuevo = st.number_input("Precio por picheo (USD)", value=precio_act, step=0.001, format="%.4f")
+            if st.button("Actualizar precio"):
+                set_precio(nuevo)
+                st.success(f"Precio: ${nuevo:.4f}")
+            
+            st.divider()
+            
+            # Usuarios
+            conn = sqlite3.connect(DB)
+            users = pd.read_sql_query("SELECT id, nombre, email, rol FROM usuarios", conn)
+            conn.close()
+            st.subheader("Usuarios")
+            st.dataframe(users, use_container_width=True)
+        else:
+            st.error("Acceso restringido")
