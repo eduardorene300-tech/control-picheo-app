@@ -15,7 +15,7 @@ import sqlite3
 import hashlib
 from datetime import datetime, timedelta
 import plotly.express as px
-import plotly.graph_objects as go
+import plotly.graph_objects as go  
 import pandas as pd
 from io import BytesIO
 import base64
