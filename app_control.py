@@ -7,7 +7,6 @@ from io import BytesIO
 
 st.set_page_config(page_title="BetaPro - Control de Picheo", layout="wide")
 
-# ========== ESTILOS ==========
 st.markdown("""
 <style>
 .stApp { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); }
@@ -18,7 +17,6 @@ st.markdown("""
 
 DB = "betapro.db"
 
-# ========== BASE DE DATOS ==========
 def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
@@ -114,15 +112,6 @@ def get_picheos(filtros=None, operador=None, es_admin=False):
         if filtros.get('mes') and filtros['mes'] != 'todos':
             query += " AND strftime('%m', fecha) = ?"
             params.append(f"{int(filtros['mes']):02d}")
-        if filtros.get('quincena') and filtros['quincena'] != 'todas':
-            if filtros['quincena'] == '1':
-                query += " AND CAST(strftime('%d', fecha) AS INTEGER) BETWEEN 1 AND 15"
-            else:
-                query += " AND CAST(strftime('%d', fecha) AS INTEGER) BETWEEN 16 AND 31"
-        if filtros.get('semana') and filtros['semana'] != 'todas':
-            semanas = {'1': (1,7), '2': (8,14), '3': (15,21), '4': (22,31)}
-            s, e = semanas[filtros['semana']]
-            query += f" AND CAST(strftime('%d', fecha) AS INTEGER) BETWEEN {s} AND {e}"
     query += " ORDER BY fecha DESC"
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
@@ -143,12 +132,6 @@ def set_precio(nuevo):
     conn.commit()
     conn.close()
 
-def get_operadores():
-    conn = sqlite3.connect(DB)
-    df = pd.read_sql_query("SELECT DISTINCT operador FROM picheos WHERE operador IS NOT NULL", conn)
-    conn.close()
-    return df['operador'].tolist() if not df.empty else []
-
 def export_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -163,11 +146,12 @@ if not st.session_state.logueado:
     st.markdown('<h1 class="main-title">⛏️ BetaPro Mining</h1>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
-        with tab1:
-        usuario = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
-        if st.button("Ingresar", use_container_width=True):
-            u = login(usuario, password)
+    
+    with tab1:
+        usuario_login = st.text_input("Usuario", key="login_user")
+        password_login = st.text_input("Contraseña", type="password", key="login_pass")
+        if st.button("Ingresar", use_container_width=True, key="login_btn"):
+            u = login(usuario_login, password_login)
             if u:
                 st.session_state.logueado = True
                 st.session_state.usuario = u[1]
@@ -178,13 +162,13 @@ if not st.session_state.logueado:
                 st.error("Usuario o contraseña incorrectos")
     
     with tab2:
-        nuevo = st.text_input("Usuario")
-        email = st.text_input("Email")
-        pass1 = st.text_input("Contraseña", type="password")
-        pass2 = st.text_input("Confirmar", type="password")
-        if st.button("Registrarse", use_container_width=True):
-            if pass1 == pass2:
-                if registrar_usuario(nuevo, pass1, email):
+        nuevo_usuario = st.text_input("Usuario", key="reg_user")
+        nuevo_email = st.text_input("Email", key="reg_email")
+        nueva_pass = st.text_input("Contraseña", type="password", key="reg_pass")
+        confirmar_pass = st.text_input("Confirmar", type="password", key="reg_confirm")
+        if st.button("Registrarse", use_container_width=True, key="reg_btn"):
+            if nueva_pass == confirmar_pass:
+                if registrar_usuario(nuevo_usuario, nueva_pass, nuevo_email):
                     st.success("Registrado! Ahora inicia sesión")
                 else:
                     st.error("Usuario ya existe")
@@ -199,22 +183,15 @@ else:
     
     menu = st.sidebar.radio("MENÚ", ["📊 Dashboard", "📝 Registrar", "📋 Registros", "🔐 Cambiar Pass", "⚙️ Admin"])
     
-    # ========== DASHBOARD ==========
     if menu == "📊 Dashboard":
         st.markdown('<h1 class="main-title">📊 Dashboard</h1>', unsafe_allow_html=True)
         
-        # Filtros
-        st.subheader("🔍 Filtros")
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             anio = st.selectbox("Año", [2024, 2025, 2026, "todos"], index=3)
         with c2:
             mes = st.selectbox("Mes", ["todos"] + list(range(1,13)), index=0)
         with c3:
-            quincena = st.selectbox("Quincena", ["todas", "1", "2"], index=0)
-        with c4:
-            semana = st.selectbox("Semana", ["todas", "1", "2", "3", "4"], index=0)
-        with c5:
             buscar = st.text_input("Buscar control", placeholder="ID...")
         
         filtros = {}
@@ -222,10 +199,6 @@ else:
             filtros['anio'] = anio
         if mes != "todos":
             filtros['mes'] = mes
-        if quincena != "todas":
-            filtros['quincena'] = quincena
-        if semana != "todas":
-            filtros['semana'] = semana
         if buscar:
             filtros['control'] = buscar
         
@@ -235,17 +208,16 @@ else:
             precio = get_precio()
             total_picheos = df['cantidad'].sum()
             
-            c1, c2, c3 = st.columns(3)
-            c1.metric("📋 Registros", len(df))
-            c2.metric("⛏️ Total Picheos", f"{int(total_picheos):,}")
-            c3.metric("💰 Ganancias", f"${total_picheos * precio:,.2f}")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("📋 Registros", len(df))
+            col2.metric("⛏️ Total Picheos", f"{int(total_picheos):,}")
+            col3.metric("💰 Ganancias", f"${total_picheos * precio:,.2f}")
             
             st.subheader("Últimos registros")
             st.dataframe(df.head(10)[['fecha', 'control', 'cantidad', 'ganancia', 'operador']], use_container_width=True)
         else:
             st.info("No hay datos")
     
-    # ========== REGISTRAR ==========
     elif menu == "📝 Registrar":
         st.markdown('<h1 class="main-title">📝 Registrar Picheo</h1>', unsafe_allow_html=True)
         
@@ -266,7 +238,6 @@ else:
                 st.success("✅ Guardado!")
                 st.rerun()
     
-    # ========== REGISTROS ==========
     elif menu == "📋 Registros":
         st.markdown('<h1 class="main-title">📋 Registros</h1>', unsafe_allow_html=True)
         
@@ -285,11 +256,9 @@ else:
         if not df.empty:
             st.dataframe(df[['id', 'fecha', 'control', 'cantidad', 'ganancia', 'operador', 'notas']], use_container_width=True)
             
-            # Exportar Excel
             excel = export_excel(df)
             st.download_button("📊 Exportar Excel", excel, f"reporte_{datetime.now().strftime('%Y%m%d')}.xlsx")
             
-            # Eliminar
             st.subheader("🗑️ Eliminar")
             id_elim = st.number_input("ID a eliminar", min_value=0, step=1)
             if st.button("Eliminar"):
@@ -300,7 +269,6 @@ else:
         else:
             st.info("No hay registros")
     
-    # ========== CAMBIAR PASS ==========
     elif menu == "🔐 Cambiar Pass":
         st.markdown('<h1 class="main-title">🔐 Cambiar Contraseña</h1>', unsafe_allow_html=True)
         
@@ -317,12 +285,10 @@ else:
             else:
                 st.error("No coinciden")
     
-    # ========== ADMIN ==========
     elif menu == "⚙️ Admin":
         if st.session_state.rol == 'admin':
             st.markdown('<h1 class="main-title">⚙️ Administración</h1>', unsafe_allow_html=True)
             
-            # Precio
             precio_act = get_precio()
             nuevo = st.number_input("Precio por picheo (USD)", value=precio_act, step=0.001, format="%.4f")
             if st.button("Actualizar precio"):
@@ -331,7 +297,6 @@ else:
             
             st.divider()
             
-            # Usuarios
             conn = sqlite3.connect(DB)
             users = pd.read_sql_query("SELECT id, nombre, email, rol FROM usuarios", conn)
             conn.close()
