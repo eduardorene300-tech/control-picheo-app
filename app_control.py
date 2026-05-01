@@ -163,8 +163,7 @@ if not st.session_state.logueado:
     st.markdown('<h1 class="main-title">⛏️ BetaPro Mining</h1>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
-    
-    with tab1:
+        with tab1:
         usuario = st.text_input("Usuario")
         password = st.text_input("Contraseña", type="password")
         if st.button("Ingresar", use_container_width=True):
