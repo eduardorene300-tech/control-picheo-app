@@ -150,4 +150,4 @@ else:
                     st.rerun()
         else:
             st.info("No hay registros")
-            Version completa - 350 lineas
+              Version completa - 350 lineas
