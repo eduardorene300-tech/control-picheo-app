@@ -139,10 +139,8 @@ def export_excel(df):
 
 # ========== LOGO CENTRADO ==========
 def logo():
-    st.markdown("<div style='display: flex; justify-content: center;'>", unsafe_allow_html=True)
-    st.image("logo.png", width=300)
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.image("logo.png", width=250)
+    st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
 
 # ========== LOGIN ==========
 if 'logueado' not in st.session_state:
