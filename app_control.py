@@ -10,12 +10,7 @@ st.set_page_config(page_title="BetaPro - Control de Picheo", layout="wide")
 st.markdown("""
 <style>
 .stApp { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); }
-.main-title { text-align: center; color: #3399FF; font-size: 2rem; }
-.logo-centrado {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 10px;
-}
+.main-title { text-align: center; color: #3399FF; font-size: 2.5rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -143,10 +138,10 @@ def export_excel(df):
     return output.getvalue()
 
 # ========== LOGO CENTRADO ==========
-def mostrar_logo(tamano=250):
-    st.markdown('<div style="display: flex; justify-content: center;">', unsafe_allow_html=True)
-    st.image("logo.png", width=tamano)
-    st.markdown('</div>', unsafe_allow_html=True)
+def logo():
+    st.markdown("<div style='display: flex; justify-content: center;'>", unsafe_allow_html=True)
+    st.image("logo.png", width=300)
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
 # ========== LOGIN ==========
@@ -154,7 +149,8 @@ if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
 if not st.session_state.logueado:
-    mostrar_logo(250)
+    logo()
+    st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
     
@@ -191,7 +187,7 @@ if not st.session_state.logueado:
 # ========== PANEL PRINCIPAL ==========
 else:
     with st.sidebar:
-        st.image("logo.png", width=150)
+        st.image("logo.png", width=200)
         st.markdown(f"### 👤 {st.session_state.usuario}")
         st.markdown(f"*Rol: {st.session_state.rol}*")
         st.divider()
@@ -199,7 +195,7 @@ else:
     menu = st.sidebar.radio("MENÚ", ["📊 Dashboard", "📝 Registrar", "📋 Registros", "🔐 Cambiar Pass", "⚙️ Admin"])
     
     if menu == "📊 Dashboard":
-        mostrar_logo(200)
+        logo()
         st.markdown('<h1 class="main-title">📊 Dashboard</h1>', unsafe_allow_html=True)
         
         st.subheader("🔍 FILTRAR POR FECHAS")
@@ -240,7 +236,7 @@ else:
             st.warning(f"No hay registros entre {fecha_desde} y {fecha_hasta}")
     
     elif menu == "📝 Registrar":
-        mostrar_logo(200)
+        logo()
         st.markdown('<h1 class="main-title">📝 Registrar Picheo</h1>', unsafe_allow_html=True)
         
         c1, c2, c3 = st.columns(3)
@@ -261,7 +257,7 @@ else:
                 st.rerun()
     
     elif menu == "📋 Registros":
-        mostrar_logo(200)
+        logo()
         st.markdown('<h1 class="main-title">📋 Todos los Registros</h1>', unsafe_allow_html=True)
         
         col_f1, col_f2 = st.columns(2)
@@ -295,7 +291,7 @@ else:
             st.info("No hay registros")
     
     elif menu == "🔐 Cambiar Pass":
-        mostrar_logo(200)
+        logo()
         st.markdown('<h1 class="main-title">🔐 Cambiar Contraseña</h1>', unsafe_allow_html=True)
         
         actual = st.text_input("Contraseña actual", type="password")
@@ -313,7 +309,7 @@ else:
     
     elif menu == "⚙️ Admin":
         if st.session_state.rol == 'admin':
-            mostrar_logo(200)
+            logo()
             st.markdown('<h1 class="main-title">⚙️ Administración</h1>', unsafe_allow_html=True)
             
             tab_a1, tab_a2, tab_a3 = st.tabs(["💰 Precio", "👥 Usuarios", "📊 Producción por Usuario"])
