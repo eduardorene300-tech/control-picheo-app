@@ -20,13 +20,24 @@ def init_db():
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY, nombre TEXT UNIQUE, pass TEXT, rol TEXT, email TEXT, fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        id INTEGER PRIMARY KEY, 
+        nombre TEXT UNIQUE, 
+        pass TEXT, 
+        rol TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS picheos (
-        id INTEGER PRIMARY KEY, fecha TEXT, control TEXT, cantidad INTEGER, ganancia REAL, operador TEXT, notas TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT)''')
+        id INTEGER PRIMARY KEY, 
+        fecha TEXT, 
+        control TEXT, 
+        cantidad INTEGER, 
+        ganancia REAL, 
+        operador TEXT, 
+        notas TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS config (
+        clave TEXT PRIMARY KEY, 
+        valor TEXT)''')
     
     hash_admin = hashlib.sha256("admin123".encode()).hexdigest()
-    c.execute("INSERT OR IGNORE INTO usuarios (nombre, pass, rol, email) VALUES ('admin', ?, 'admin', 'admin@betapro.com')", (hash_admin,))
+    c.execute("INSERT OR IGNORE INTO usuarios (id, nombre, pass, rol) VALUES (1, 'admin', ?, 'admin')", (hash_admin,))
     c.execute("INSERT OR IGNORE INTO config VALUES ('precio', '0.025')")
     conn.commit()
     conn.close()
@@ -42,12 +53,12 @@ def login(u, p):
     conn.close()
     return r
 
-def registrar_usuario(u, p, email):
+def registrar_usuario(u, p):
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     hp = hashlib.sha256(p.encode()).hexdigest()
     try:
-        c.execute("INSERT INTO usuarios (nombre, pass, rol, email) VALUES (?, ?, 'usuario', ?)", (u, hp, email))
+        c.execute("INSERT INTO usuarios (nombre, pass, rol) VALUES (?, ?, 'usuario')", (u, hp))
         conn.commit()
         return True
     except:
@@ -161,7 +172,6 @@ if not st.session_state.logueado:
     
     with tab2:
         nuevo_usuario = st.text_input("Usuario *", key="reg_user")
-        nuevo_email = st.text_input("Email", key="reg_email")
         nueva_pass = st.text_input("Contraseña *", type="password", key="reg_pass")
         confirmar_pass = st.text_input("Confirmar *", type="password", key="reg_confirm")
         if st.button("Registrarse", use_container_width=True, key="reg_btn"):
@@ -170,7 +180,7 @@ if not st.session_state.logueado:
             elif nueva_pass != confirmar_pass:
                 st.error("Las contraseñas no coinciden")
             else:
-                if registrar_usuario(nuevo_usuario, nueva_pass, nuevo_email):
+                if registrar_usuario(nuevo_usuario, nueva_pass):
                     st.success("✅ Registrado! Ahora inicia sesión")
                 else:
                     st.error("El usuario ya existe")
@@ -186,7 +196,7 @@ else:
     if menu == "📊 Dashboard":
         st.markdown('<h1 class="main-title">📊 Dashboard</h1>', unsafe_allow_html=True)
         
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3 = st.columns(3)
         with c1:
             anio = st.selectbox("Año", [2024, 2025, 2026, "todos"], index=3)
         with c2:
@@ -298,7 +308,7 @@ else:
             st.divider()
             
             conn = sqlite3.connect(DB)
-            users = pd.read_sql_query("SELECT id, nombre, email, rol FROM usuarios", conn)
+            users = pd.read_sql_query("SELECT id, nombre, rol FROM usuarios", conn)
             conn.close()
             st.subheader("Usuarios")
             st.dataframe(users, use_container_width=True)
