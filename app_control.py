@@ -11,11 +11,6 @@ st.markdown("""
 <style>
 .stApp { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); }
 .main-title { text-align: center; color: #3399FF; font-size: 2rem; }
-.logo-centrado {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 10px;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -144,9 +139,9 @@ def export_excel(df):
 
 # ========== LOGO CENTRADO ==========
 def mostrar_logo(tamano=250):
-    st.markdown('<div style="display: flex; justify-content: center;">', unsafe_allow_html=True)
-    st.image("logo.png", width=tamano)
-    st.markdown('</div>', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1,3,1])
+    with col2:
+        st.image("logo.png", width=tamano)
     st.markdown("<br>", unsafe_allow_html=True)
 
 # ========== LOGIN ==========
