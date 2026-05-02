@@ -1,6 +1,6 @@
 import streamlit as st
 import sqlite3
-import bcrypt
+import hashlib
 import pandas as pd
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -54,24 +54,19 @@ def init_db():
 init_db()
 
 # ==========================
-# SEGURIDAD / AUTH
+# SEGURIDAD / AUTH (SHA-256)
 # ==========================
 def hash_pass(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-def verify_pass(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def login(usuario, password):
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT * FROM usuarios WHERE nombre=?", (usuario,))
+    hashed = hash_pass(password)
+    c.execute("SELECT * FROM usuarios WHERE nombre=? AND pass=?", (usuario, hashed))
     row = c.fetchone()
     conn.close()
-
-    if row and verify_pass(password, row[2]):
-        return row
-    return None
+    return row
 
 def registrar_usuario(usuario, password, email):
     conn = get_conn()
@@ -90,17 +85,16 @@ def registrar_usuario(usuario, password, email):
 def cambiar_pass(usuario, actual, nueva):
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT pass FROM usuarios WHERE nombre=?", (usuario,))
-    row = c.fetchone()
+    hashed_actual = hash_pass(actual)
+    hashed_nueva = hash_pass(nueva)
 
-    if not row or not verify_pass(actual, row[0]):
-        return False
+    c.execute("UPDATE usuarios SET pass=? WHERE nombre=? AND pass=?",
+              (hashed_nueva, usuario, hashed_actual))
 
-    new_hash = hash_pass(nueva)
-    c.execute("UPDATE usuarios SET pass=? WHERE nombre=?", (new_hash, usuario))
+    ok = c.rowcount > 0
     conn.commit()
     conn.close()
-    return True
+    return ok
 
 # ==========================
 # LÓGICA DE PICHEOS
