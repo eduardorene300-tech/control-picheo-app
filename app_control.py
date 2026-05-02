@@ -137,14 +137,20 @@ def export_excel(df):
         df.to_excel(writer, index=False)
     return output.getvalue()
 
+def mostrar_logo(tamano=150):
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        try:
+            st.image("logo.png", width=tamano)
+        except:
+            st.markdown(f'<h2 style="text-align: center; color: #FFD700;">⛏️ BETAPRO</h2>', unsafe_allow_html=True)
+
 if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
 if not st.session_state.logueado:
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        st.image("logo.png", width=250)
-        st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
+    mostrar_logo(200)
+    st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
     
@@ -180,7 +186,10 @@ if not st.session_state.logueado:
 
 else:
     with st.sidebar:
-        st.image("logo.png", width=200)
+        try:
+            st.image("logo.png", width=120)
+        except:
+            st.markdown(f'<h3 style="text-align: center; color: #FFD700;">⛏️ BP</h3>', unsafe_allow_html=True)
         st.markdown(f"### 👤 {st.session_state.usuario}")
         st.markdown(f"*Rol: {st.session_state.rol}*")
         st.divider()
@@ -188,6 +197,7 @@ else:
     menu = st.sidebar.radio("MENÚ", ["📊 Dashboard", "📝 Registrar", "📋 Registros", "🔐 Cambiar Pass", "⚙️ Admin"])
     
     if menu == "📊 Dashboard":
+        mostrar_logo(100)
         st.markdown('<h1 class="main-title">📊 Dashboard</h1>', unsafe_allow_html=True)
         
         st.subheader("🔍 FILTRAR POR FECHAS")
@@ -228,6 +238,7 @@ else:
             st.warning(f"No hay registros entre {fecha_desde} y {fecha_hasta}")
     
     elif menu == "📝 Registrar":
+        mostrar_logo(100)
         st.markdown('<h1 class="main-title">📝 Registrar Picheo</h1>', unsafe_allow_html=True)
         
         c1, c2, c3 = st.columns(3)
@@ -248,6 +259,7 @@ else:
                 st.rerun()
     
     elif menu == "📋 Registros":
+        mostrar_logo(100)
         st.markdown('<h1 class="main-title">📋 Todos los Registros</h1>', unsafe_allow_html=True)
         
         col_f1, col_f2 = st.columns(2)
@@ -281,6 +293,7 @@ else:
             st.info("No hay registros")
     
     elif menu == "🔐 Cambiar Pass":
+        mostrar_logo(100)
         st.markdown('<h1 class="main-title">🔐 Cambiar Contraseña</h1>', unsafe_allow_html=True)
         
         actual = st.text_input("Contraseña actual", type="password")
@@ -298,13 +311,15 @@ else:
     
     elif menu == "⚙️ Admin":
         if st.session_state.rol == 'admin':
+            mostrar_logo(100)
             st.markdown('<h1 class="main-title">⚙️ Administración</h1>', unsafe_allow_html=True)
             
             tab_a1, tab_a2, tab_a3 = st.tabs(["💰 Precio", "👥 Usuarios", "📊 Producción por Usuario"])
             
             with tab_a1:
+                st.subheader("💰 Configurar Precio por Picheo")
                 precio_act = get_precio()
-                nuevo = st.number_input("Precio por picheo (USD)", value=precio_act, step=0.001, format="%.4f")
+                nuevo = st.number_input("Precio (USD)", value=precio_act, step=0.001, format="%.4f")
                 if st.button("Actualizar precio"):
                     set_precio(nuevo)
                     st.success(f"✅ Precio: ${nuevo:.4f}")
