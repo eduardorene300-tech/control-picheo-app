@@ -11,7 +11,6 @@ st.markdown("""
 <style>
 .stApp { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); }
 .main-title { text-align: center; color: #3399FF; font-size: 2.5rem; }
-.logo-text { color: #FFD700; font-size: 2rem; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -138,19 +137,13 @@ def export_excel(df):
         df.to_excel(writer, index=False)
     return output.getvalue()
 
-def mostrar_logo():
-    try:
-        st.image("logo.png", width=100)
-    except:
-        st.markdown('<p class="logo-text">⛏️ BetaPro</p>', unsafe_allow_html=True)
-
 if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
 if not st.session_state.logueado:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        mostrar_logo()
+        st.image("logo.png", width=250)
         st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
@@ -187,7 +180,7 @@ if not st.session_state.logueado:
 
 else:
     with st.sidebar:
-        mostrar_logo()
+        st.image("logo.png", width=200)
         st.markdown(f"### 👤 {st.session_state.usuario}")
         st.markdown(f"*Rol: {st.session_state.rol}*")
         st.divider()
