@@ -149,7 +149,8 @@ if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
 if not st.session_state.logueado:
-    logo()
+    def logo():
+    st.image("logo.png", width=250)
     st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
