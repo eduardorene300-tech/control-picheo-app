@@ -14,7 +14,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-DB = "betapro.db"
+DB = "datos.db"
 
 def init_db():
     conn = sqlite3.connect(DB)
