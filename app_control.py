@@ -46,7 +46,6 @@ def init_db():
         valor TEXT
     )''')
 
-    # No modifica datos existentes
     c.execute("INSERT OR IGNORE INTO config VALUES ('precio', '0.025')")
 
     conn.commit()
@@ -198,9 +197,9 @@ if not st.session_state.logueado:
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
 
     with tab1:
-        u = st.text_input("Usuario")
-        p = st.text_input("Contraseña", type="password")
-        if st.button("Ingresar"):
+        u = st.text_input("Usuario", key="login_user")
+        p = st.text_input("Contraseña", type="password", key="login_pass")
+        if st.button("Ingresar", key="login_btn"):
             user = login(u, p)
             if user:
                 st.session_state.logueado = True
@@ -211,11 +210,11 @@ if not st.session_state.logueado:
                 st.error("Credenciales incorrectas")
 
     with tab2:
-        nu = st.text_input("Nuevo usuario")
-        em = st.text_input("Email")
-        pw = st.text_input("Contraseña", type="password")
-        cf = st.text_input("Confirmar", type="password")
-        if st.button("Registrar"):
+        nu = st.text_input("Nuevo usuario", key="reg_user")
+        em = st.text_input("Email", key="reg_email")
+        pw = st.text_input("Contraseña", type="password", key="reg_pass")
+        cf = st.text_input("Confirmar", type="password", key="reg_confirm")
+        if st.button("Registrar", key="reg_btn"):
             if pw == cf:
                 if registrar_usuario(nu, pw, em):
                     st.success("Registrado correctamente")
@@ -243,9 +242,9 @@ else:
 
         col1, col2 = st.columns(2)
         with col1:
-            f1 = st.date_input("Desde", datetime.now() - timedelta(days=30))
+            f1 = st.date_input("Desde", datetime.now() - timedelta(days=30), key="dash_from")
         with col2:
-            f2 = st.date_input("Hasta", datetime.now())
+            f2 = st.date_input("Hasta", datetime.now(), key="dash_to")
 
         filtros = {
             "fecha_desde": f1.strftime("%Y-%m-%d"),
@@ -266,7 +265,6 @@ else:
 
             excel = export_excel(df)
             st.download_button("📊 Exportar Excel", excel, "dashboard.xlsx")
-
         else:
             st.warning("No hay registros en este rango")
 
@@ -279,16 +277,16 @@ else:
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            fecha = st.date_input("Fecha", datetime.now())
+            fecha = st.date_input("Fecha", datetime.now(), key="reg_fecha")
         with c2:
-            control = st.text_input("ID Control")
+            control = st.text_input("ID Control", key="reg_control")
         with c3:
-            cantidad = st.number_input("Cantidad", min_value=1)
+            cantidad = st.number_input("Cantidad", min_value=1, key="reg_cantidad")
 
-        operador = st.text_input("Operador", value=st.session_state.usuario)
-        notas = st.text_area("Notas")
+        operador = st.text_input("Operador", value=st.session_state.usuario, key="reg_operador")
+        notas = st.text_area("Notas", key="reg_notas")
 
-        if st.button("Guardar"):
+        if st.button("Guardar", key="reg_guardar"):
             guardar_picheo(fecha.strftime("%Y-%m-%d"), control, cantidad, operador, notas)
             st.success("Guardado correctamente")
             st.rerun()
@@ -302,9 +300,9 @@ else:
 
         d1, d2 = st.columns(2)
         with d1:
-            f1 = st.date_input("Desde", datetime.now() - timedelta(days=30))
+            f1 = st.date_input("Desde", datetime.now() - timedelta(days=30), key="registros_from")
         with d2:
-            f2 = st.date_input("Hasta", datetime.now())
+            f2 = st.date_input("Hasta", datetime.now(), key="registros_to")
 
         filtros = {
             "fecha_desde": f1.strftime("%Y-%m-%d"),
@@ -322,8 +320,8 @@ else:
             st.download_button("📊 Exportar Excel", excel, "registros.xlsx")
 
             st.subheader("Eliminar registro")
-            id_elim = st.number_input("ID", min_value=0)
-            if st.button("Eliminar"):
+            id_elim = st.number_input("ID", min_value=0, key="elim_id")
+            if st.button("Eliminar", key="elim_btn"):
                 eliminar_picheo(id_elim, st.session_state.usuario, st.session_state.rol == "admin")
                 st.success("Eliminado")
                 st.rerun()
@@ -337,11 +335,11 @@ else:
         mostrar_logo(200)
         st.header("🔐 Cambiar Contraseña")
 
-        actual = st.text_input("Actual", type="password")
-        nueva = st.text_input("Nueva", type="password")
-        conf = st.text_input("Confirmar", type="password")
+        actual = st.text_input("Actual", type="password", key="pass_old")
+        nueva = st.text_input("Nueva", type="password", key="pass_new")
+        conf = st.text_input("Confirmar", type="password", key="pass_confirm")
 
-        if st.button("Actualizar"):
+        if st.button("Actualizar", key="pass_btn"):
             if nueva == conf:
                 if cambiar_pass(st.session_state.usuario, actual, nueva):
                     st.success("Contraseña actualizada")
@@ -364,8 +362,8 @@ else:
 
             with tab1:
                 precio = get_precio()
-                nuevo = st.number_input("Precio por picheo", value=precio, step=0.001)
-                if st.button("Actualizar precio"):
+                nuevo = st.number_input("Precio por picheo", value=precio, step=0.001, key="precio_input")
+                if st.button("Actualizar precio", key="precio_btn"):
                     set_precio(nuevo)
                     st.success("Precio actualizado")
 
