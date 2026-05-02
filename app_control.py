@@ -11,10 +11,11 @@ st.markdown("""
 <style>
 .stApp { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); }
 .main-title { text-align: center; color: #3399FF; font-size: 2.5rem; }
+.metric-card { background: #1e1e2e; border-radius: 10px; padding: 15px; border-left: 4px solid #3399FF; margin: 10px 0; }
 </style>
 """, unsafe_allow_html=True)
 
-DB = "datos.db"
+DB = "betapro.db"
 
 def init_db():
     conn = sqlite3.connect(DB)
@@ -137,7 +138,6 @@ def export_excel(df):
         df.to_excel(writer, index=False)
     return output.getvalue()
 
-# ========== LOGIN ==========
 if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
@@ -176,7 +176,6 @@ if not st.session_state.logueado:
                 else:
                     st.error("El usuario ya existe")
 
-# ========== PANEL PRINCIPAL ==========
 else:
     with st.sidebar:
         st.markdown(f"### 👤 {st.session_state.usuario}")
@@ -188,56 +187,51 @@ else:
     if menu == "📊 Dashboard":
         st.markdown('<h1 class="main-title">📊 Dashboard</h1>', unsafe_allow_html=True)
         
-        st.subheader("🔍 FILTRAR POR FECHAS")
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            fecha_desde = st.date_input("📅 Desde", datetime.now() - timedelta(days=30))
-        with col_f2:
-            fecha_hasta = st.date_input("📅 Hasta", datetime.now())
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            anio = st.selectbox("Año", [2024, 2025, 2026, "todos"], index=3)
+        with c2:
+            mes = st.selectbox("Mes", ["todos"] + list(range(1,13)), index=0)
+        with c3:
+            buscar = st.text_input("Buscar control", placeholder="ID...")
         
-        buscar_control = st.text_input("🔍 Buscar por ID Control", placeholder="Ej: CTL-001")
+        filtros = {}
+        if anio != "todos":
+            filtros['anio'] = anio
+        if mes != "todos":
+            filtros['mes'] = mes
+        if buscar:
+            filtros['control'] = buscar
         
-        filtros = {
-            'fecha_desde': fecha_desde.strftime('%Y-%m-%d'),
-            'fecha_hasta': fecha_hasta.strftime('%Y-%m-%d')
-        }
-        if buscar_control:
-            filtros['control'] = buscar_control
-        
-        df = get_picheos(filtros, None, st.session_state.rol == 'admin')
+        df = get_picheos(filtros, st.session_state.usuario, st.session_state.rol == 'admin')
         
         if not df.empty:
             precio = get_precio()
-            total_registros = len(df)
-            total_picheos = int(df['cantidad'].sum())
-            total_ganancias = total_picheos * precio
+            total_picheos = df['cantidad'].sum()
             
-            col_r1, col_r2, col_r3 = st.columns(3)
-            col_r1.metric("📋 REGISTROS", total_registros)
-            col_r2.metric("⛏️ TOTAL PICHEOS", f"{total_picheos:,}")
-            col_r3.metric("💰 GANANCIAS USD", f"${total_ganancias:,.2f}")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("📋 Registros", len(df))
+            col2.metric("⛏️ Total Picheos", f"{int(total_picheos):,}")
+            col3.metric("💰 Ganancias", f"${total_picheos * precio:,.2f}")
             
-            st.subheader("📋 LISTA COMPLETA")
-            st.dataframe(df[['fecha', 'control', 'cantidad', 'ganancia', 'operador', 'notas']], use_container_width=True)
-            
-            excel = export_excel(df)
-            st.download_button("📊 EXPORTAR A EXCEL", excel, f"reporte_{fecha_desde}_a_{fecha_hasta}.xlsx")
+            st.subheader("Últimos registros")
+            st.dataframe(df.head(10)[['fecha', 'control', 'cantidad', 'ganancia', 'operador']], use_container_width=True)
         else:
-            st.warning(f"No hay registros entre {fecha_desde} y {fecha_hasta}")
+            st.info("No hay datos")
     
     elif menu == "📝 Registrar":
         st.markdown('<h1 class="main-title">📝 Registrar Picheo</h1>', unsafe_allow_html=True)
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            fecha = st.date_input("📅 Fecha", datetime.now())
+            fecha = st.date_input("Fecha", datetime.now())
         with c2:
-            control = st.text_input("🏷️ ID Control")
+            control = st.text_input("ID Control")
         with c3:
-            cantidad = st.number_input("⛏️ Cantidad", min_value=1, step=1)
+            cantidad = st.number_input("Cantidad", min_value=1, step=1)
         
-        operador = st.text_input("👤 Operador", value=st.session_state.usuario)
-        notas = st.text_area("📝 Notas")
+        operador = st.text_input("Operador", value=st.session_state.usuario)
+        notas = st.text_area("Notas")
         
         if st.button("💾 Guardar", use_container_width=True):
             if control and cantidad:
@@ -246,25 +240,23 @@ else:
                 st.rerun()
     
     elif menu == "📋 Registros":
-        st.markdown('<h1 class="main-title">📋 Todos los Registros</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 class="main-title">📋 Registros</h1>', unsafe_allow_html=True)
         
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
+        c1, c2 = st.columns(2)
+        with c1:
             desde = st.date_input("Desde", datetime.now() - timedelta(days=30))
-        with col_f2:
+        with c2:
             hasta = st.date_input("Hasta", datetime.now())
         
-        filtros = {
-            'fecha_desde': desde.strftime('%Y-%m-%d'),
-            'fecha_hasta': hasta.strftime('%Y-%m-%d')
-        }
-        
-        df = get_picheos(filtros, 
-                        st.session_state.usuario if st.session_state.rol != 'admin' else None,
-                        st.session_state.rol == 'admin')
+        df = get_picheos(
+            {'fecha_desde': desde.strftime('%Y-%m-%d'), 'fecha_hasta': hasta.strftime('%Y-%m-%d')},
+            st.session_state.usuario,
+            st.session_state.rol == 'admin'
+        )
         
         if not df.empty:
             st.dataframe(df[['id', 'fecha', 'control', 'cantidad', 'ganancia', 'operador', 'notas']], use_container_width=True)
+            
             excel = export_excel(df)
             st.download_button("📊 Exportar Excel", excel, f"reporte_{datetime.now().strftime('%Y%m%d')}.xlsx")
             
@@ -298,60 +290,18 @@ else:
         if st.session_state.rol == 'admin':
             st.markdown('<h1 class="main-title">⚙️ Administración</h1>', unsafe_allow_html=True)
             
-            tab_a1, tab_a2, tab_a3 = st.tabs(["💰 Precio", "👥 Usuarios", "📊 Producción por Usuario"])
+            precio_act = get_precio()
+            nuevo = st.number_input("Precio por picheo (USD)", value=precio_act, step=0.001, format="%.4f")
+            if st.button("Actualizar precio"):
+                set_precio(nuevo)
+                st.success(f"Precio: ${nuevo:.4f}")
             
-            with tab_a1:
-                st.subheader("💰 Configurar Precio por Picheo")
-                precio_act = get_precio()
-                nuevo = st.number_input("Precio (USD)", value=precio_act, step=0.001, format="%.4f")
-                if st.button("Actualizar precio"):
-                    set_precio(nuevo)
-                    st.success(f"✅ Precio: ${nuevo:.4f}")
+            st.divider()
             
-            with tab_a2:
-                st.subheader("👥 LISTA DE USUARIOS")
-                conn = sqlite3.connect(DB)
-                users = pd.read_sql_query("SELECT id, nombre, email, rol, fecha_registro FROM usuarios", conn)
-                conn.close()
-                st.dataframe(users, use_container_width=True)
-                
-                st.subheader("📊 ESTADÍSTICAS POR USUARIO")
-                conn = sqlite3.connect(DB)
-                stats = pd.read_sql_query("""
-                    SELECT operador, COUNT(*) as registros, SUM(cantidad) as total_picheos, SUM(ganancia) as total_ganancias
-                    FROM picheos GROUP BY operador
-                """, conn)
-                conn.close()
-                if not stats.empty:
-                    st.dataframe(stats, use_container_width=True)
-            
-            with tab_a3:
-                st.subheader("📊 PRODUCCIÓN POR USUARIO")
-                conn = sqlite3.connect(DB)
-                usuarios_lista = pd.read_sql_query("SELECT nombre FROM usuarios", conn)
-                conn.close()
-                usuario_sel = st.selectbox("Seleccionar Usuario", usuarios_lista['nombre'].tolist())
-                
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    f_desde = st.date_input("Desde", datetime.now() - timedelta(days=30))
-                with col_f2:
-                    f_hasta = st.date_input("Hasta", datetime.now())
-                
-                conn = sqlite3.connect(DB)
-                df_user = pd.read_sql_query(
-                    "SELECT fecha, control, cantidad, ganancia, notas FROM picheos WHERE operador = ? AND fecha BETWEEN ? AND ? ORDER BY fecha DESC",
-                    conn, params=(usuario_sel, f_desde.strftime('%Y-%m-%d'), f_hasta.strftime('%Y-%m-%d'))
-                )
-                conn.close()
-                
-                if not df_user.empty:
-                    st.write(f"**Total Picheos:** {int(df_user['cantidad'].sum()):,}")
-                    st.write(f"**Ganancias:** ${df_user['ganancia'].sum():,.2f}")
-                    st.dataframe(df_user, use_container_width=True)
-                    excel_user = export_excel(df_user)
-                    st.download_button(f"📊 Exportar producción de {usuario_sel}", excel_user, f"produccion_{usuario_sel}.xlsx")
-                else:
-                    st.info("No hay registros")
+            conn = sqlite3.connect(DB)
+            users = pd.read_sql_query("SELECT id, nombre, email, rol FROM usuarios", conn)
+            conn.close()
+            st.subheader("Usuarios")
+            st.dataframe(users, use_container_width=True)
         else:
             st.error("Acceso restringido")
