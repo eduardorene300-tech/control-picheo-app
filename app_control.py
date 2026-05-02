@@ -1,395 +1,375 @@
 import streamlit as st
 import sqlite3
 import hashlib
-import pandas as pd
 from datetime import datetime, timedelta
+import pandas as pd
 from io import BytesIO
 
-# ==========================
-# CONFIGURACIÓN GENERAL
-# ==========================
 st.set_page_config(page_title="BetaPro - Control de Picheo", layout="wide")
+
+st.markdown("""
+<style>
+.stApp { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%); }
+.main-title { text-align: center; color: #3399FF; font-size: 2rem; }
+.logo-centrado {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 DB = "betapro.db"
 
-# ==========================
-# BASE DE DATOS
-# ==========================
-def get_conn():
-    return sqlite3.connect(DB, check_same_thread=False)
-
 def init_db():
-    with get_conn() as conn:
-        c = conn.cursor()
-
-        c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY,
-            nombre TEXT UNIQUE,
-            pass TEXT,
-            rol TEXT,
-            email TEXT,
-            fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS picheos (
-            id INTEGER PRIMARY KEY,
-            fecha TEXT,
-            control TEXT,
-            cantidad INTEGER,
-            ganancia REAL,
-            operador TEXT,
-            notas TEXT
-        )''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS config (
-            clave TEXT PRIMARY KEY,
-            valor TEXT
-        )''')
-
-        c.execute('''CREATE TABLE IF NOT EXISTS auditoria (
-            id INTEGER PRIMARY KEY,
-            fecha TEXT,
-            usuario TEXT,
-            accion TEXT,
-            detalle TEXT
-        )''')
-
-        # Precio por defecto
-        c.execute("INSERT OR IGNORE INTO config (clave, valor) VALUES ('precio', '0.025')")
-
-        # Admin por defecto
-        admin_hash = hashlib.sha256("admin123".encode()).hexdigest()
-        c.execute(
-            "INSERT OR IGNORE INTO usuarios (nombre, pass, rol, email) VALUES ('admin', ?, 'admin', 'admin@betapro.com')",
-            (admin_hash,)
-        )
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY, nombre TEXT UNIQUE, pass TEXT, rol TEXT, email TEXT, fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS picheos (
+        id INTEGER PRIMARY KEY, fecha TEXT, control TEXT, cantidad INTEGER, ganancia REAL, operador TEXT, notas TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS config (clave TEXT PRIMARY KEY, valor TEXT)''')
+    
+    hash_admin = hashlib.sha256("admin123".encode()).hexdigest()
+    c.execute("INSERT OR IGNORE INTO usuarios (nombre, pass, rol, email) VALUES ('admin', ?, 'admin', 'admin@betapro.com')", (hash_admin,))
+    c.execute("INSERT OR IGNORE INTO config VALUES ('precio', '0.025')")
+    conn.commit()
+    conn.close()
 
 init_db()
 
-# ==========================
-# AUDITORÍA
-# ==========================
-def auditar(usuario, accion, detalle=""):
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO auditoria (fecha, usuario, accion, detalle) VALUES (?,?,?,?)",
-            (fecha, usuario, accion, detalle)
-        )
-        conn.commit()
+def login(u, p):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    hp = hashlib.sha256(p.encode()).hexdigest()
+    c.execute("SELECT * FROM usuarios WHERE nombre=? AND pass=?", (u, hp))
+    r = c.fetchone()
+    conn.close()
+    return r
 
-# ==========================
-# SEGURIDAD / AUTH
-# ==========================
-def hash_pass(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def login(usuario, password):
-    hashed = hash_pass(password)
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM usuarios WHERE nombre=? AND pass=?", (usuario, hashed))
-        row = c.fetchone()
-    if row:
-        auditar(usuario, "login", "Inicio de sesión exitoso")
-    return row
-
-def registrar_usuario(usuario, password, email):
-    hashed = hash_pass(password)
+def registrar_usuario(u, p, email):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    hp = hashlib.sha256(p.encode()).hexdigest()
     try:
-        with get_conn() as conn:
-            c = conn.cursor()
-            c.execute(
-                "INSERT INTO usuarios (nombre, pass, rol, email) VALUES (?, ?, 'usuario', ?)",
-                (usuario, hashed, email)
-            )
-            conn.commit()
-        auditar(usuario, "registro", f"Nuevo usuario: {usuario}")
+        c.execute("INSERT INTO usuarios (nombre, pass, rol, email) VALUES (?, ?, 'usuario', ?)", (u, hp, email))
+        conn.commit()
         return True
     except:
         return False
+    finally:
+        conn.close()
 
-def cambiar_pass(usuario, actual, nueva):
-    hashed_actual = hash_pass(actual)
-    hashed_nueva = hash_pass(nueva)
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute(
-            "UPDATE usuarios SET pass=? WHERE nombre=? AND pass=?",
-            (hashed_nueva, usuario, hashed_actual)
-        )
-        ok = c.rowcount > 0
-        conn.commit()
-    if ok:
-        auditar(usuario, "cambio_clave", "Cambio de contraseña")
+def cambiar_pass(u, actual, nueva):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    ha = hashlib.sha256(actual.encode()).hexdigest()
+    hn = hashlib.sha256(nueva.encode()).hexdigest()
+    c.execute("UPDATE usuarios SET pass=? WHERE nombre=? AND pass=?", (hn, u, ha))
+    ok = c.rowcount > 0
+    conn.commit()
+    conn.close()
     return ok
 
-# ==========================
-# PICHEOS
-# ==========================
-def get_precio():
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("SELECT valor FROM config WHERE clave='precio'")
-        row = c.fetchone()
-    return float(row[0])
-
-def set_precio(nuevo, usuario):
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute("UPDATE config SET valor=? WHERE clave='precio'", (str(nuevo),))
-        conn.commit()
-    auditar(usuario, "cambio_precio", f"Nuevo precio: {nuevo}")
-
 def guardar_picheo(fecha, control, cantidad, operador, notas):
-    precio = get_precio()
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("SELECT valor FROM config WHERE clave='precio'")
+    precio = float(c.fetchone()[0])
     ganancia = cantidad * precio
-    with get_conn() as conn:
-        c = conn.cursor()
-        c.execute(
-            """INSERT INTO picheos (fecha, control, cantidad, ganancia, operador, notas)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (fecha, control, cantidad, ganancia, operador, notas)
-        )
-        conn.commit()
-    auditar(operador, "alta_picheo", f"Control: {control}, Cantidad: {cantidad}")
+    c.execute("INSERT INTO picheos (fecha, control, cantidad, ganancia, operador, notas) VALUES (?,?,?,?,?,?)",
+             (fecha, control, cantidad, ganancia, operador, notas))
+    conn.commit()
+    conn.close()
+    return True
 
 def eliminar_picheo(id_reg, operador, es_admin):
-    with get_conn() as conn:
-        c = conn.cursor()
-        if es_admin:
-            c.execute("DELETE FROM picheos WHERE id=?", (id_reg,))
-        else:
-            c.execute("DELETE FROM picheos WHERE id=? AND operador=?", (id_reg, operador))
-        borrados = c.rowcount
-        conn.commit()
-    if borrados > 0:
-        auditar(operador, "baja_picheo", f"ID eliminado: {id_reg}")
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    if es_admin:
+        c.execute("DELETE FROM picheos WHERE id=?", (id_reg,))
+    else:
+        c.execute("DELETE FROM picheos WHERE id=? AND operador=?", (id_reg, operador))
+    conn.commit()
+    conn.close()
 
-def get_picheos(filtros, operador, es_admin):
-    with get_conn() as conn:
-        query = "SELECT * FROM picheos WHERE 1=1"
-        params = []
-
-        if not es_admin:
-            query += " AND operador=?"
-            params.append(operador)
-
-        if filtros.get("desde"):
+def get_picheos(filtros=None, operador=None, es_admin=False):
+    conn = sqlite3.connect(DB)
+    query = "SELECT * FROM picheos WHERE 1=1"
+    params = []
+    if not es_admin and operador:
+        query += " AND operador = ?"
+        params.append(operador)
+    if filtros:
+        if filtros.get('fecha_desde'):
             query += " AND fecha >= ?"
-            params.append(filtros["desde"])
-
-        if filtros.get("hasta"):
+            params.append(filtros['fecha_desde'])
+        if filtros.get('fecha_hasta'):
             query += " AND fecha <= ?"
-            params.append(filtros["hasta"])
-
-        df = pd.read_sql_query(query, conn, params=params)
+            params.append(filtros['fecha_hasta'])
+        if filtros.get('control'):
+            query += " AND control LIKE ?"
+            params.append(f"%{filtros['control']}%")
+        if filtros.get('anio') and filtros['anio'] != 'todos':
+            query += " AND strftime('%Y', fecha) = ?"
+            params.append(str(filtros['anio']))
+        if filtros.get('mes') and filtros['mes'] != 'todos':
+            query += " AND strftime('%m', fecha) = ?"
+            params.append(f"{int(filtros['mes']):02d}")
+    query += " ORDER BY fecha DESC"
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
     return df
 
-def get_usuarios_df():
-    with get_conn() as conn:
-        return pd.read_sql_query(
-            "SELECT id, nombre, email, rol, fecha_registro FROM usuarios",
-            conn
-        )
+def get_precio():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("SELECT valor FROM config WHERE clave='precio'")
+    p = float(c.fetchone()[0])
+    conn.close()
+    return p
 
-def get_auditoria_df():
-    with get_conn() as conn:
-        return pd.read_sql_query(
-            "SELECT fecha, usuario, accion, detalle FROM auditoria ORDER BY fecha DESC",
-            conn
-        )
-
-# ==========================
-# UTILIDADES
-# ==========================
-def mostrar_logo(tamano=250):
-    st.markdown(
-        f"""
-        <div style="width:100%; text-align:center; margin-bottom:15px;">
-            <img src="logo.png" style="width:{tamano}px;">
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+def set_precio(nuevo):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("UPDATE config SET valor=? WHERE clave='precio'", (str(nuevo),))
+    conn.commit()
+    conn.close()
 
 def export_excel(df):
     output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False)
     return output.getvalue()
 
-# ==========================
-# SESIÓN
-# ==========================
-if "logueado" not in st.session_state:
+# ========== LOGO CENTRADO ==========
+def mostrar_logo(tamano=250):
+    st.markdown('<div style="display: flex; justify-content: center;">', unsafe_allow_html=True)
+    st.image("logo.png", width=tamano)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+# ========== LOGIN ==========
+if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
-# ==========================
-# LOGIN
-# ==========================
 if not st.session_state.logueado:
     mostrar_logo(250)
-
+    
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
-
+    
     with tab1:
-        u = st.text_input("Usuario", key="login_user")
-        p = st.text_input("Contraseña", type="password", key="login_pass")
-        if st.button("Ingresar", key="login_btn"):
-            user = login(u, p)
-            if user:
+        usuario_login = st.text_input("Usuario", key="login_user")
+        password_login = st.text_input("Contraseña", type="password", key="login_pass")
+        if st.button("Ingresar", use_container_width=True, key="login_btn"):
+            u = login(usuario_login, password_login)
+            if u:
                 st.session_state.logueado = True
-                st.session_state.usuario = user[1]
-                st.session_state.rol = user[3]
+                st.session_state.usuario = u[1]
+                st.session_state.rol = u[3]
+                st.session_state.user_id = u[0]
                 st.rerun()
             else:
                 st.error("Usuario o contraseña incorrectos")
-
+    
     with tab2:
-        nu = st.text_input("Nuevo usuario", key="reg_user")
-        em = st.text_input("Email", key="reg_email")
-        pw = st.text_input("Contraseña", type="password", key="reg_pass")
-        cf = st.text_input("Confirmar", type="password", key="reg_confirm")
-        if st.button("Registrar", key="reg_btn"):
-            if pw != cf:
+        nuevo_usuario = st.text_input("Usuario *", key="reg_user")
+        nuevo_email = st.text_input("Email", key="reg_email")
+        nueva_pass = st.text_input("Contraseña *", type="password", key="reg_pass")
+        confirmar_pass = st.text_input("Confirmar *", type="password", key="reg_confirm")
+        if st.button("Registrarse", use_container_width=True, key="reg_btn"):
+            if not nuevo_usuario or not nueva_pass:
+                st.error("Usuario y contraseña son obligatorios")
+            elif nueva_pass != confirmar_pass:
                 st.error("Las contraseñas no coinciden")
-            elif registrar_usuario(nu, pw, em):
-                st.success("Registrado correctamente")
             else:
-                st.error("El usuario ya existe")
+                if registrar_usuario(nuevo_usuario, nueva_pass, nuevo_email):
+                    st.success("✅ Registrado! Ahora inicia sesión")
+                else:
+                    st.error("El usuario ya existe")
 
-# ==========================
-# PANEL PRINCIPAL
-# ==========================
+# ========== PANEL PRINCIPAL ==========
 else:
     with st.sidebar:
-        st.markdown(
-            """
-            <div style="width:100%; text-align:center; margin-bottom:10px;">
-                <img src="logo.png" style="width:150px;">
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        st.write(f"👤 {st.session_state.usuario}")
-        st.write(f"Rol: {st.session_state.rol}")
-        menu = st.radio("Menú", ["📊 Dashboard", "📝 Registrar", "📋 Registros", "🔐 Cambiar Pass", "⚙️ Admin"])
-
-    # DASHBOARD
+        st.image("logo.png", width=150)
+        st.markdown(f"### 👤 {st.session_state.usuario}")
+        st.markdown(f"*Rol: {st.session_state.rol}*")
+        st.divider()
+    
+    menu = st.sidebar.radio("MENÚ", ["📊 Dashboard", "📝 Registrar", "📋 Registros", "🔐 Cambiar Pass", "⚙️ Admin"])
+    
     if menu == "📊 Dashboard":
         mostrar_logo(200)
-        st.header("📊 Dashboard")
-
-        f1 = st.date_input("Desde", datetime.now() - timedelta(days=30), key="dash_desde")
-        f2 = st.date_input("Hasta", datetime.now(), key="dash_hasta")
-
+        st.markdown('<h1 class="main-title">📊 Dashboard</h1>', unsafe_allow_html=True)
+        
+        st.subheader("🔍 FILTRAR POR FECHAS")
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_desde = st.date_input("📅 Desde", datetime.now() - timedelta(days=30))
+        with col_f2:
+            fecha_hasta = st.date_input("📅 Hasta", datetime.now())
+        
+        buscar_control = st.text_input("🔍 Buscar por ID Control", placeholder="Ej: CTL-001")
+        
         filtros = {
-            "desde": f1.strftime("%Y-%m-%d"),
-            "hasta": f2.strftime("%Y-%m-%d")
+            'fecha_desde': fecha_desde.strftime('%Y-%m-%d'),
+            'fecha_hasta': fecha_hasta.strftime('%Y-%m-%d')
         }
-
-        df = get_picheos(filtros, st.session_state.usuario, st.session_state.rol == "admin")
-
+        if buscar_control:
+            filtros['control'] = buscar_control
+        
+        df = get_picheos(filtros, None, st.session_state.rol == 'admin')
+        
         if not df.empty:
             precio = get_precio()
-            total = int(df["cantidad"].sum())
-            ganancia = total * precio
-
-            st.metric("Total Picheos", total)
-            st.metric("Ganancias USD", f"${ganancia:,.2f}")
-
-            st.dataframe(df)
-
+            total_registros = len(df)
+            total_picheos = int(df['cantidad'].sum())
+            total_ganancias = total_picheos * precio
+            
+            col_r1, col_r2, col_r3 = st.columns(3)
+            col_r1.metric("📋 REGISTROS", total_registros)
+            col_r2.metric("⛏️ TOTAL PICHEOS", f"{total_picheos:,}")
+            col_r3.metric("💰 GANANCIAS USD", f"${total_ganancias:,.2f}")
+            
+            st.subheader("📋 LISTA COMPLETA")
+            st.dataframe(df[['fecha', 'control', 'cantidad', 'ganancia', 'operador', 'notas']], use_container_width=True)
+            
             excel = export_excel(df)
-            st.download_button("📊 Exportar Excel", excel, "dashboard.xlsx")
+            st.download_button("📊 EXPORTAR A EXCEL", excel, f"reporte_{fecha_desde}_a_{fecha_hasta}.xlsx")
         else:
-            st.warning("No hay registros")
-
-    # REGISTRAR
+            st.warning(f"No hay registros entre {fecha_desde} y {fecha_hasta}")
+    
     elif menu == "📝 Registrar":
         mostrar_logo(200)
-        st.header("📝 Registrar Picheo")
-
-        fecha = st.date_input("Fecha", datetime.now(), key="reg_fecha")
-        control = st.text_input("ID Control", key="reg_control")
-        cantidad = st.number_input("Cantidad", min_value=1, key="reg_cantidad")
-        notas = st.text_area("Notas", key="reg_notas")
-
-        if st.button("Guardar", key="reg_guardar"):
-            guardar_picheo(fecha.strftime("%Y-%m-%d"), control, cantidad, st.session_state.usuario, notas)
-            st.success("Guardado correctamente")
-            st.rerun()
-
-    # REGISTROS
+        st.markdown('<h1 class="main-title">📝 Registrar Picheo</h1>', unsafe_allow_html=True)
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            fecha = st.date_input("📅 Fecha", datetime.now())
+        with c2:
+            control = st.text_input("🏷️ ID Control")
+        with c3:
+            cantidad = st.number_input("⛏️ Cantidad", min_value=1, step=1)
+        
+        operador = st.text_input("👤 Operador", value=st.session_state.usuario)
+        notas = st.text_area("📝 Notas")
+        
+        if st.button("💾 Guardar", use_container_width=True):
+            if control and cantidad:
+                guardar_picheo(fecha.strftime('%Y-%m-%d'), control, cantidad, operador, notas)
+                st.success("✅ Guardado!")
+                st.rerun()
+    
     elif menu == "📋 Registros":
         mostrar_logo(200)
-        st.header("📋 Registros")
-
-        f1 = st.date_input("Desde", datetime.now() - timedelta(days=30), key="regs_desde")
-        f2 = st.date_input("Hasta", datetime.now(), key="regs_hasta")
-
+        st.markdown('<h1 class="main-title">📋 Todos los Registros</h1>', unsafe_allow_html=True)
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            desde = st.date_input("Desde", datetime.now() - timedelta(days=30))
+        with col_f2:
+            hasta = st.date_input("Hasta", datetime.now())
+        
         filtros = {
-            "desde": f1.strftime("%Y-%m-%d"),
-            "hasta": f2.strftime("%Y-%m-%d")
+            'fecha_desde': desde.strftime('%Y-%m-%d'),
+            'fecha_hasta': hasta.strftime('%Y-%m-%d')
         }
-
-        df = get_picheos(filtros, st.session_state.usuario, st.session_state.rol == "admin")
-
+        
+        df = get_picheos(filtros, 
+                        st.session_state.usuario if st.session_state.rol != 'admin' else None,
+                        st.session_state.rol == 'admin')
+        
         if not df.empty:
-            st.dataframe(df)
-
+            st.dataframe(df[['id', 'fecha', 'control', 'cantidad', 'ganancia', 'operador', 'notas']], use_container_width=True)
             excel = export_excel(df)
-            st.download_button("📊 Exportar Excel", excel, "registros.xlsx")
-
-            id_elim = st.number_input("ID a eliminar", min_value=0, key="elim_id")
-            if st.button("Eliminar", key="elim_btn"):
-                eliminar_picheo(id_elim, st.session_state.usuario, st.session_state.rol == "admin")
-                st.success("Eliminado")
-                st.rerun()
+            st.download_button("📊 Exportar Excel", excel, f"reporte_{datetime.now().strftime('%Y%m%d')}.xlsx")
+            
+            st.subheader("🗑️ Eliminar")
+            id_elim = st.number_input("ID a eliminar", min_value=0, step=1)
+            if st.button("Eliminar"):
+                if id_elim > 0:
+                    eliminar_picheo(id_elim, st.session_state.usuario, st.session_state.rol == 'admin')
+                    st.success("Eliminado!")
+                    st.rerun()
         else:
             st.info("No hay registros")
-
-    # CAMBIAR PASS
+    
     elif menu == "🔐 Cambiar Pass":
         mostrar_logo(200)
-        st.header("🔐 Cambiar Contraseña")
-
-        actual = st.text_input("Actual", type="password", key="pass_actual")
-        nueva = st.text_input("Nueva", type="password", key="pass_nueva")
-        conf = st.text_input("Confirmar", type="password", key="pass_conf")
-
-        if st.button("Actualizar", key="pass_btn"):
-            if nueva != conf:
-                st.error("No coinciden")
-            elif cambiar_pass(st.session_state.usuario, actual, nueva):
-                st.success("Contraseña actualizada")
+        st.markdown('<h1 class="main-title">🔐 Cambiar Contraseña</h1>', unsafe_allow_html=True)
+        
+        actual = st.text_input("Contraseña actual", type="password")
+        nueva = st.text_input("Nueva contraseña", type="password")
+        confirma = st.text_input("Confirmar", type="password")
+        
+        if st.button("Actualizar"):
+            if nueva == confirma:
+                if cambiar_pass(st.session_state.usuario, actual, nueva):
+                    st.success("✅ Contraseña cambiada")
+                else:
+                    st.error("Contraseña actual incorrecta")
             else:
-                st.error("Contraseña actual incorrecta")
-
-    # ADMIN
+                st.error("No coinciden")
+    
     elif menu == "⚙️ Admin":
-        if st.session_state.rol != "admin":
-            st.error("Acceso restringido")
-        else:
+        if st.session_state.rol == 'admin':
             mostrar_logo(200)
-            st.header("⚙️ Administración")
-
-            tab1, tab2, tab3 = st.tabs(["💰 Precio", "👥 Usuarios", "📜 Auditoría"])
-
-            with tab1:
-                precio = get_precio()
-                nuevo = st.number_input("Precio por picheo", value=precio, step=0.001, key="precio_input")
-                if st.button("Actualizar precio", key="precio_btn"):
-                    set_precio(nuevo, st.session_state.usuario)
-                    st.success("Precio actualizado")
-
-            with tab2:
-                users = get_usuarios_df()
-                st.dataframe(users)
-
-            with tab3:
-                aud = get_auditoria_df()
-                st.dataframe(aud)
-                excel = export_excel(aud)
-                st.download_button("📜 Exportar Auditoría", excel, "auditoria.xlsx")
+            st.markdown('<h1 class="main-title">⚙️ Administración</h1>', unsafe_allow_html=True)
+            
+            tab_a1, tab_a2, tab_a3 = st.tabs(["💰 Precio", "👥 Usuarios", "📊 Producción por Usuario"])
+            
+            with tab_a1:
+                st.subheader("💰 Configurar Precio por Picheo")
+                precio_act = get_precio()
+                nuevo = st.number_input("Precio (USD)", value=precio_act, step=0.001, format="%.4f")
+                if st.button("Actualizar precio"):
+                    set_precio(nuevo)
+                    st.success(f"✅ Precio: ${nuevo:.4f}")
+            
+            with tab_a2:
+                st.subheader("👥 LISTA DE USUARIOS")
+                conn = sqlite3.connect(DB)
+                users = pd.read_sql_query("SELECT id, nombre, email, rol, fecha_registro FROM usuarios", conn)
+                conn.close()
+                st.dataframe(users, use_container_width=True)
+                
+                st.subheader("📊 ESTADÍSTICAS POR USUARIO")
+                conn = sqlite3.connect(DB)
+                stats = pd.read_sql_query("""
+                    SELECT operador, COUNT(*) as registros, SUM(cantidad) as total_picheos, SUM(ganancia) as total_ganancias
+                    FROM picheos GROUP BY operador
+                """, conn)
+                conn.close()
+                if not stats.empty:
+                    st.dataframe(stats, use_container_width=True)
+            
+            with tab_a3:
+                st.subheader("📊 PRODUCCIÓN POR USUARIO")
+                conn = sqlite3.connect(DB)
+                usuarios_lista = pd.read_sql_query("SELECT nombre FROM usuarios", conn)
+                conn.close()
+                usuario_sel = st.selectbox("Seleccionar Usuario", usuarios_lista['nombre'].tolist())
+                
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    f_desde = st.date_input("Desde", datetime.now() - timedelta(days=30))
+                with col_f2:
+                    f_hasta = st.date_input("Hasta", datetime.now())
+                
+                conn = sqlite3.connect(DB)
+                df_user = pd.read_sql_query(
+                    "SELECT fecha, control, cantidad, ganancia, notas FROM picheos WHERE operador = ? AND fecha BETWEEN ? AND ? ORDER BY fecha DESC",
+                    conn, params=(usuario_sel, f_desde.strftime('%Y-%m-%d'), f_hasta.strftime('%Y-%m-%d'))
+                )
+                conn.close()
+                
+                if not df_user.empty:
+                    st.write(f"**Total Picheos:** {int(df_user['cantidad'].sum()):,}")
+                    st.write(f"**Ganancias:** ${df_user['ganancia'].sum():,.2f}")
+                    st.dataframe(df_user, use_container_width=True)
+                    excel_user = export_excel(df_user)
+                    st.download_button(f"📊 Exportar producción de {usuario_sel}", excel_user, f"produccion_{usuario_sel}.xlsx")
+                else:
+                    st.info("No hay registros")
+        else:
+            st.error("Acceso restringido")
