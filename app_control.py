@@ -137,7 +137,7 @@ def export_excel(df):
         df.to_excel(writer, index=False)
     return output.getvalue()
 
-# ========== LOGO CENTRADO ==========
+# ========== LOGO ==========
 def logo():
     st.image("logo.png", width=250)
     st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
@@ -147,9 +147,7 @@ if 'logueado' not in st.session_state:
     st.session_state.logueado = False
 
 if not st.session_state.logueado:
-    def logo():
-    st.image("logo.png", width=250)
-    st.markdown('<h1 class="main-title">BetaPro Mining</h1>', unsafe_allow_html=True)
+    logo()
     
     tab1, tab2 = st.tabs(["🔐 Iniciar Sesión", "📝 Registrarse"])
     
@@ -186,7 +184,7 @@ if not st.session_state.logueado:
 # ========== PANEL PRINCIPAL ==========
 else:
     with st.sidebar:
-        st.image("logo.png", width=200)
+        st.image("logo.png", width=150)
         st.markdown(f"### 👤 {st.session_state.usuario}")
         st.markdown(f"*Rol: {st.session_state.rol}*")
         st.divider()
