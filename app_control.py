@@ -14,7 +14,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-DB = "data.db"
+DB = "picheos.db"
 
 def init_db():
     conn = sqlite3.connect(DB)
